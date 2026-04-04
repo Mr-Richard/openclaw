@@ -139,11 +139,30 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 RUN chown node:node /app
 
 COPY --from=runtime-assets --chown=node:node /app/dist ./dist
+COPY --from=runtime-assets --chown=node:node /app/src ./src
 COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules
 COPY --from=runtime-assets --chown=node:node /app/package.json .
 COPY --from=runtime-assets --chown=node:node /app/openclaw.mjs .
 COPY --from=runtime-assets --chown=node:node /app/extensions ./extensions
 COPY --from=runtime-assets --chown=node:node /app/skills ./skills
+# OpenClaw bundled layout: /app/skills/<skill-name>/SKILL.md (see src/agents/skills/bundled-dir.ts).
+# Record paths for ClawNest and set the runtime env explicitly.
+RUN node -e "\
+const fs=require('fs');\
+const path=require('path');\
+const root='/app/skills';\
+const skills={};\
+for (const ent of fs.readdirSync(root,{withFileTypes:true})) {\
+  if (!ent.isDirectory() || ent.name.startsWith('.')) continue;\
+  const md=path.join(root,ent.name,'SKILL.md');\
+  if (fs.existsSync(md)) skills[ent.name]=md;\
+}\
+fs.writeFileSync(path.join(root,'.openclaw-bundle-skills.json'),JSON.stringify({version:1,root,skills},null,2));\
+" \
+ && chown node:node /app/skills/.openclaw-bundle-skills.json
+
+ENV OPENCLAW_BUNDLED_SKILLS_DIR=/app/skills
+
 COPY --from=runtime-assets --chown=node:node /app/docs ./docs
 
 # Keep pnpm available in the runtime image for container-local workflows.
